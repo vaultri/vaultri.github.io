@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>vaultrie</title>
+    <meta name="description" content="Gestor de TOTP con cifrado cliente-side" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="./style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🔐</text></svg>"
+    />
+  </head>
+  <body>
+    <main id="app" aria-busy="true">
+      <header class="masthead">
+        <h1>vaultrie</h1>
+        <div class="tools" hidden id="tools">
+          <button type="button" id="add-open" class="ghost">Añadir</button>
+          <button type="button" id="lock" class="ghost">Bloquear</button>
+        </div>
+      </header>
+
+      <p class="loading" id="loading">Cargando…</p>
+
+      <!-- Sin vault en este navegador -->
+      <section class="panel" id="setup" hidden>
+        <h2>Crear vault</h2>
+        <p class="lede">
+          La passphrase cifra tus códigos en este dispositivo. No se envía a
+          ningún sitio y no hay forma de recuperarla: apunta la clave de
+          recuperación que sale a continuación.
+        </p>
+        <form id="setup-form">
+          <label>
+            Passphrase
+            <input type="password" id="setup-pass" autocomplete="new-password" required minlength="8" />
+          </label>
+          <label>
+            Repítela
+            <input type="password" id="setup-repeat" autocomplete="new-password" required minlength="8" />
+          </label>
+          <p class="error" id="setup-error" hidden></p>
+          <button type="submit" class="primary">Crear vault</button>
+        </form>
+      </section>
+
+      <!-- Clave de recuperación, una sola vez -->
+      <section class="panel" id="recovery" hidden>
+        <h2>Guarda esta clave</h2>
+        <p class="lede">
+          Abre el vault si olvidas la passphrase, y es lo único que lo hace. No
+          volverá a mostrarse.
+        </p>
+        <output class="recovery-key" id="recovery-key"></output>
+        <div class="row">
+          <button type="button" id="recovery-copy" class="ghost">Copiar</button>
+          <button type="button" id="recovery-done" class="primary">La he guardado</button>
+        </div>
+      </section>
+
+      <!-- Vault existente, bloqueado -->
+      <section class="panel" id="unlock" hidden>
+        <h2>Desbloquear</h2>
+        <form id="unlock-form">
+          <label id="unlock-pass-label">
+            Passphrase
+            <input type="password" id="unlock-pass" autocomplete="current-password" />
+          </label>
+          <label id="unlock-recovery-label" hidden>
+            Clave de recuperación
+            <input type="text" id="unlock-recovery" autocomplete="off" spellcheck="false" />
+          </label>
+          <p class="error" id="unlock-error" hidden></p>
+          <button type="submit" class="primary">Desbloquear</button>
+          <button type="button" id="unlock-toggle" class="link">Usar la clave de recuperación</button>
+        </form>
+      </section>
+
+      <!-- Vault abierto -->
+      <section id="vault" hidden>
+        <ul class="entries" id="entries"></ul>
+        <p class="empty" id="empty" hidden>
+          Aún no hay nada. Pulsa <strong>Añadir</strong> y pega la URI
+          <code>otpauth://</code> que te dé el servicio, o mete el secreto a mano.
+        </p>
+      </section>
+
+      <footer class="note">
+        <p>
+          Prototipo de la fase 1. El vault se cifra en este navegador y se guarda
+          solo aquí — la sincronización con Drive todavía no está conectada, así
+          que borrar los datos del sitio borra el vault.
+        </p>
+      </footer>
+    </main>
+
+    <dialog id="add-dialog">
+      <form method="dialog" id="add-form">
+        <h2>Añadir entrada</h2>
+
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" id="tab-uri" aria-selected="true">Pegar URI</button>
+          <button type="button" role="tab" id="tab-manual" aria-selected="false">A mano</button>
+        </div>
+
+        <div id="pane-uri">
+          <label>
+            URI otpauth
+            <input
+              type="text"
+              id="add-uri"
+              placeholder="otpauth://totp/GitHub:tu@correo?secret=…"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </label>
+        </div>
+
+        <div id="pane-manual" hidden>
+          <label>
+            Servicio
+            <input type="text" id="add-issuer" placeholder="GitHub" autocomplete="off" />
+          </label>
+          <label>
+            Cuenta
+            <input type="text" id="add-account" placeholder="tu@correo" autocomplete="off" />
+          </label>
+          <label>
+            Secreto (base32)
+            <input type="text" id="add-secret" spellcheck="false" autocomplete="off" />
+          </label>
+          <details>
+            <summary>Opciones avanzadas</summary>
+            <div class="grid">
+              <label>
+                Algoritmo
+                <select id="add-algorithm">
+                  <option>SHA1</option>
+                  <option>SHA256</option>
+                  <option>SHA512</option>
+                </select>
+              </label>
+              <label>
+                Dígitos
+                <input type="number" id="add-digits" value="6" min="6" max="10" />
+              </label>
+              <label>
+                Periodo (s)
+                <input type="number" id="add-period" value="30" min="1" max="300" />
+              </label>
+            </div>
+          </details>
+        </div>
+
+        <p class="error" id="add-error" hidden></p>
+        <div class="row">
+          <button type="button" id="add-cancel" class="ghost">Cancelar</button>
+          <button type="button" id="add-save" class="primary">Añadir</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

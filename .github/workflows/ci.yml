@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  WASM_PACK_VERSION: v0.13.1
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          # El core tiene que seguir compilando para el navegador.
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-features
+      - run: cargo build --target wasm32-unknown-unknown
+
+  # Corre exactamente la build del despliegue. Sin esto, que la web no se pueda
+  # construir solo se descubre al llegar a `main`, que es donde despliega Pages.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Instalar wasm-pack
+        run: |
+          set -euo pipefail
+          name="wasm-pack-${WASM_PACK_VERSION}-x86_64-unknown-linux-musl"
+          curl -sSfL "https://github.com/rustwasm/wasm-pack/releases/download/${WASM_PACK_VERSION}/${name}.tar.gz" \
+            | tar xz -C /tmp
+          install -m 755 "/tmp/${name}/wasm-pack" /usr/local/bin/wasm-pack
+
+      - name: Compilar el WASM
+        run: wasm-pack build crates/totp-web --target web --out-dir ../../web/pkg --release --no-typescript
+
+      - name: Comprobar que la web queda completa
+        run: |
+          set -euo pipefail
+          for file in index.html app.js style.css pkg/totp_web.js pkg/totp_web_bg.wasm; do
+            test -s "web/$file" || { echo "falta web/$file"; exit 1; }
+          done
+          # Está vacío a propósito, así que aquí no vale `test -s`.
+          test -e web/.nojekyll || { echo "falta web/.nojekyll"; exit 1; }
