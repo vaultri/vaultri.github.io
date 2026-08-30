@@ -14,8 +14,8 @@ Fase 1 en curso. Lo que hay hoy:
 |---|---|
 | `crates/totp-core` — cripto del vault y generación de códigos | funcional, con tests |
 | Sync granular direccionado por contenido | funcional, con tests |
+| Vault web (WASM) | funcional, sin sincronizar |
 | Backend de Google Drive (`appDataFolder`) | pendiente |
-| Vault web (WASM) | pendiente |
 | Extensión de Chrome, dongle, móvil | fases 2-5 |
 
 ## `totp-core`
@@ -114,6 +114,35 @@ let sealed = EncryptedEntry::seal(&mk, EntryId::generate()?, &entry)?;
 let bytes = sealed.to_bytes()?;   // lo que se sube al almacén remoto
 let header_bytes = header.to_bytes()?;
 ```
+
+## La web
+
+`web/` es el vault en el navegador y `crates/totp-web` el puente WASM que lo
+conecta con el core. En el puente no hay lógica propia: solo traducción de tipos
+y el formato de la copia local, porque todo lo que toca claves tiene que ser el
+mismo código que usarán la extensión, el móvil y el dongle.
+
+Hoy funciona entero contra el almacén en memoria: crear el vault, apuntar la
+clave de recuperación, dar de alta entradas pegando una URI `otpauth://` o a
+mano, ver los códigos con su cuenta atrás, copiarlos, y bloquear —a mano o solo,
+tras cinco minutos de inactividad—. El vault cifrado se guarda en el
+`localStorage` del navegador; **el sync con Drive todavía no está conectado**,
+así que borrar los datos del sitio borra el vault.
+
+Mientras está desbloqueado, la MK vive en memoria del WASM: derivar Argon2id en
+cada pulsación sería inviable. Es la diferencia con la extensión de la fase 2,
+que desbloqueará con WebAuthn PRF y confirmación biométrica en cada uso y por
+tanto no la retendrá.
+
+```sh
+cargo install wasm-pack   # o el binario de las releases del proyecto
+wasm-pack build crates/totp-web --target web --out-dir ../../web/pkg --release
+python3 -m http.server -d web 8765    # http://127.0.0.1:8765
+```
+
+El despliegue va a GitHub Pages desde Actions (`.github/workflows/pages.yml`),
+que compila el WASM y sube `web/` en cada push a `main`. Requiere tener puesto
+**Settings → Pages → Source: GitHub Actions** una vez.
 
 ## Desarrollo
 

@@ -9,6 +9,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use serde_bytes::ByteBuf;
 
 use crate::error::{Error, Result};
 
@@ -97,6 +98,52 @@ impl MemoryStore {
             .iter()
             .map(|(id, bytes)| (id, bytes.as_slice()))
     }
+
+    /// Volcado serializable del almacén entero, para persistirlo donde sea que
+    /// el cliente guarde su caché local.
+    pub fn snapshot(&self) -> StoreSnapshot {
+        StoreSnapshot {
+            objects: self
+                .objects
+                .iter()
+                .map(|(id, bytes)| (*id, ByteBuf::from(bytes.clone())))
+                .collect(),
+            head: self.head,
+            known: self.known.clone(),
+        }
+    }
+
+    /// Reconstruye un almacén desde un volcado, comprobando cada objeto contra
+    /// su hash: lo que se persistió pudo ser manipulado igual que lo que llega
+    /// del remoto.
+    pub fn from_snapshot(snapshot: StoreSnapshot) -> Result<Self> {
+        let mut objects = BTreeMap::new();
+        for (id, bytes) in snapshot.objects {
+            id.verify(&bytes)?;
+            objects.insert(id, bytes.into_vec());
+        }
+
+        if let Some(head) = snapshot.head
+            && !objects.contains_key(&head)
+        {
+            return Err(Error::MissingObject);
+        }
+
+        Ok(Self {
+            objects,
+            head: snapshot.head,
+            generation: 0,
+            known: snapshot.known,
+        })
+    }
+}
+
+/// Un `MemoryStore` en forma serializable.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct StoreSnapshot {
+    objects: Vec<(ObjectId, ByteBuf)>,
+    head: Option<ObjectId>,
+    known: Vec<ObjectId>,
 }
 
 impl ObjectStore for MemoryStore {
@@ -191,6 +238,61 @@ mod tests {
             assert_eq!(get_verified(&store, &id).await.unwrap(), b"contenido");
             assert_eq!(
                 get_verified(&store, &ObjectId::of(b"nada")).await,
+                Err(Error::MissingObject)
+            );
+        });
+    }
+
+    #[test]
+    fn a_snapshot_restores_the_whole_store() {
+        pollster::block_on(async {
+            let mut store = MemoryStore::new();
+            let a = ObjectId::of(b"a");
+            store.put(&a, b"a").await.unwrap();
+            store.append_known_commit(a).await.unwrap();
+            store.set_head(None, a).await.unwrap();
+
+            let restored = MemoryStore::from_snapshot(store.snapshot()).unwrap();
+
+            assert_eq!(
+                restored.get(&a).await.unwrap().as_deref(),
+                Some(b"a".as_slice())
+            );
+            assert_eq!(restored.head().await.unwrap().unwrap().commit, a);
+            assert_eq!(restored.known_commits().await.unwrap(), alloc::vec![a]);
+        });
+    }
+
+    #[test]
+    fn a_tampered_snapshot_is_rejected() {
+        pollster::block_on(async {
+            let mut store = MemoryStore::new();
+            let a = ObjectId::of(b"a");
+            store.put(&a, b"a").await.unwrap();
+
+            // Lo que se guardó en el navegador pudo cambiarse igual que lo que
+            // llega del remoto.
+            let mut snapshot = store.snapshot();
+            snapshot.objects[0].1[0] ^= 1;
+            assert_eq!(
+                MemoryStore::from_snapshot(snapshot).map(|_| ()),
+                Err(Error::CorruptObject)
+            );
+        });
+    }
+
+    #[test]
+    fn a_snapshot_whose_head_is_missing_is_rejected() {
+        pollster::block_on(async {
+            let mut store = MemoryStore::new();
+            let a = ObjectId::of(b"a");
+            store.put(&a, b"a").await.unwrap();
+            store.set_head(None, a).await.unwrap();
+
+            let mut snapshot = store.snapshot();
+            snapshot.objects.clear();
+            assert_eq!(
+                MemoryStore::from_snapshot(snapshot).map(|_| ()),
                 Err(Error::MissingObject)
             );
         });

@@ -4,3 +4,4 @@ Cargo.lock.orig
 node_modules/
 dist/
 pkg/
+web/pkg/

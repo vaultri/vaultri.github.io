@@ -21,4 +21,4 @@ pub use engine::{SyncReport, sync};
 pub use merge::merge_trees;
 pub use objects::{Commit, ObjectId, Tree, TreeEntry};
 pub use repo::Repo;
-pub use store::{HeadRef, HeadUpdate, MemoryStore, ObjectStore, get_verified};
+pub use store::{HeadRef, HeadUpdate, MemoryStore, ObjectStore, StoreSnapshot, get_verified};
