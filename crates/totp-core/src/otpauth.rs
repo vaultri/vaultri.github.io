@@ -60,10 +60,17 @@ pub fn parse_uri(uri: &str) -> Result<Entry> {
     let mut period: u32 = 30;
 
     for pair in query.split('&').filter(|p| !p.is_empty()) {
-        let (key, value) = pair
-            .split_once('=')
-            .ok_or(Error::InvalidUri("parámetro sin valor"))?;
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         let value = percent_decode(value)?;
+
+        // Un parámetro vacío, o sin `=` siquiera, no dice nada: se trata como
+        // ausente y el campo se queda en su valor por defecto. Hay emisores que
+        // los sueltan, y tumbar por eso un QR por lo demás correcto sería ser
+        // estricto al leer, que es justo lo que este parser no quiere.
+        if value.is_empty() {
+            continue;
+        }
+
         match key.to_ascii_lowercase().as_str() {
             "secret" => secret = Some(decode_secret(&value)?),
             "issuer" => issuer = Some(value),
@@ -246,6 +253,37 @@ mod tests {
             parse_uri("otpauth://totp/A?secret=JBSWY3DPEHPK3PXP&image=https%3A%2F%2Fx.test")
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn empty_parameters_fall_back_to_the_defaults() {
+        let entry =
+            parse_uri("otpauth://totp/A?secret=JBSWY3DPEHPK3PXP&algorithm=&digits=&period=")
+                .unwrap();
+
+        assert_eq!(entry.algorithm, Algorithm::Sha1);
+        assert_eq!(entry.digits, 6);
+        assert_eq!(entry.period, 30);
+    }
+
+    #[test]
+    fn an_empty_issuer_falls_back_to_the_label_prefix() {
+        let entry = parse_uri("otpauth://totp/GitHub:yo?secret=JBSWY3DPEHPK3PXP&issuer=").unwrap();
+        assert_eq!(entry.issuer, "GitHub");
+    }
+
+    #[test]
+    fn parameters_without_a_value_are_ignored() {
+        let entry = parse_uri("otpauth://totp/A?secret=JBSWY3DPEHPK3PXP&image").unwrap();
+        assert_eq!(entry.digits, 6);
+    }
+
+    #[test]
+    fn an_empty_secret_counts_as_missing() {
+        // Tolerar el vacío no puede llegar a dar por buena una entrada sin
+        // secreto.
+        assert!(parse_uri("otpauth://totp/A?secret=").is_err());
+        assert!(parse_uri("otpauth://totp/A?secret").is_err());
     }
 
     #[test]
