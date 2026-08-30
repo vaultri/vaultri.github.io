@@ -1,0 +1,29 @@
+[package]
+name = "totp-core"
+description = "Núcleo compartido del gestor TOTP: cripto del vault y generación de códigos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+hmac = { version = "0.12", default-features = false }
+sha1 = { version = "0.10", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+zeroize = { version = "1", default-features = false, features = ["alloc", "derive"] }
+subtle = { version = "2", default-features = false }
+data-encoding = { version = "2", default-features = false, features = ["alloc"] }
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
+serde_bytes = { version = "0.11", default-features = false, features = ["alloc"] }
+ciborium = { version = "0.2", default-features = false }
+getrandom = "0.2"
+
+[dev-dependencies]
+hex = "0.4"
+
+# En el navegador `getrandom` necesita puentear a `crypto.getRandomValues`; sin
+# esta feature el core compila para wasm32 pero falla al pedir entropía.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
