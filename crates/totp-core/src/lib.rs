@@ -22,9 +22,12 @@
 //! # Ok::<(), totp_core::Error>(())
 //! ```
 
+mod byte_array;
+
 pub mod crypto;
 pub mod error;
 pub mod otpauth;
+pub mod sync;
 pub mod totp;
 pub mod vault;
 

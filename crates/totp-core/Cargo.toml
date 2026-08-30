@@ -21,7 +21,9 @@ ciborium = { version = "0.2", default-features = false }
 getrandom = "0.2"
 
 [dev-dependencies]
-hex = "0.4"
+# Ejecutor mínimo: el core es async porque el backend real es `fetch`, pero los
+# tests no necesitan runtime ninguno.
+pollster = "0.4"
 
 # En el navegador `getrandom` necesita puentear a `crypto.getRandomValues`; sin
 # esta feature el core compila para wasm32 pero falla al pedir entropía.

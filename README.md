@@ -13,7 +13,8 @@ Fase 1 en curso. Lo que hay hoy:
 | Componente | Estado |
 |---|---|
 | `crates/totp-core` — cripto del vault y generación de códigos | funcional, con tests |
-| Sync content-addressed contra Google Drive | pendiente |
+| Sync granular direccionado por contenido | funcional, con tests |
+| Backend de Google Drive (`appDataFolder`) | pendiente |
 | Vault web (WASM) | pendiente |
 | Extensión de Chrome, dongle, móvil | fases 2-5 |
 
@@ -33,6 +34,8 @@ almacenamiento y el reloj; la cripto y el formato viven aquí una sola vez.
   `Debug` y se comparan en tiempo constante.
 - **`vault`** — el formato en disco: cabecera con los envoltorios de la Master
   Key, y entradas cifradas de una en una.
+- **`sync`** — un control de versiones diminuto sobre un almacén no confiable:
+  objetos inmutables, commits, y fusión por el ancestro común.
 
 ### Cómo se protege el vault
 
@@ -58,6 +61,43 @@ parámetros del KDF.
 
 Los parámetros de Argon2id se guardan junto al envoltorio en lugar de fijarse en
 el código, para poder subirlos con el tiempo sin romper vaults ya creados.
+
+### El sync
+
+El remoto es un blob store tonto —el `appDataFolder` de Drive— que no puede
+resolver nada por nosotros, así que el modelo es el de un control de versiones
+diminuto que corre entero en el cliente:
+
+- Cada versión de una entrada es un **objeto inmutable** nombrado por el
+  SHA-256 de sus bytes cifrados. Editar no reescribe nada: crea un objeto nuevo.
+  Solo viajan los objetos que al otro lado le falten.
+- Cada cambio produce un **commit** con el árbol completo y el enlace a su
+  padre. El árbol lleva el `updated_at` de cada entrada, de modo que **fusionar
+  no descifra ni una sola entrada**: bastan los commits.
+- Los clientes reconcilian **fusionando por el ancestro común**. Gana el cambio
+  más reciente, borrado incluido; como la historia es inmutable, lo que pierde
+  el desempate sigue recuperable desde un commit anterior. Un borrado deja
+  lápida, para que un peer desactualizado no resucite la entrada.
+- El merge es **determinista**: dos clientes que fusionen las mismas dos puntas
+  producen el mismo objeto byte a byte y convergen sin dar otra vuelta. Para eso
+  el nonce de un commit se deriva de su propio contenido en vez de ser aleatorio.
+- El `head` se mueve con **compare-and-set**, y todo lo publicado se anota antes
+  en un **`known-commits.log`** append-only. Perder la carrera del `head` no
+  pierde el commit: sigue siendo descubrible y el siguiente sync lo recoge.
+- Todo lo que sale del almacén se **verifica contra su hash** antes de usarse.
+
+El almacén está detrás de un trait de siete métodos (`ObjectStore`), así que la
+fase 3 puede reutilizar el mismo motor para hablar con el dongle por WebHID
+cambiando solo esa implementación. `MemoryStore` la implementa en memoria y es
+con lo que corren los tests.
+
+```rust
+use totp_core::sync::{sync, MemoryStore, Repo};
+
+let mut local = Repo::new(MemoryStore::new());
+local.put(&mk, id, &entry, now).await?;          // commit local
+sync(local.store_mut(), &mut remote, &mk, now).await?;
+```
 
 ### Uso
 

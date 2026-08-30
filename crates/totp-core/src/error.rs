@@ -1,3 +1,6 @@
+extern crate alloc;
+
+use alloc::string::String;
 use core::fmt;
 
 /// Error único del core. Deliberadamente pobre en detalles en todo lo que
@@ -23,6 +26,19 @@ pub enum Error {
     InvalidEntry(&'static str),
     /// URI `otpauth://` mal formada.
     InvalidUri(&'static str),
+    /// El almacén remoto falló (red, permisos, cuota). El texto viene de la
+    /// capa de transporte y es solo para diagnóstico.
+    Storage(String),
+    /// Un objeto al que apunta un commit no está en el almacén. Historia
+    /// incompleta o poda demasiado agresiva.
+    MissingObject,
+    /// Los bytes de un objeto no corresponden al hash con el que se pidió: el
+    /// almacén es no confiable, así que se comprueba siempre.
+    CorruptObject,
+    /// El `head` remoto cambió bajo nuestros pies más veces de las que
+    /// reintentamos. No se ha perdido nada: los commits ya están publicados en
+    /// el log, y el siguiente sync los recoge.
+    SyncContention,
 }
 
 impl fmt::Display for Error {
@@ -36,6 +52,10 @@ impl fmt::Display for Error {
             Error::NoMatchingWrapper => f.write_str("ningún envoltorio coincide con la credencial"),
             Error::InvalidEntry(what) => write!(f, "entrada inválida: {what}"),
             Error::InvalidUri(what) => write!(f, "URI otpauth inválida: {what}"),
+            Error::Storage(what) => write!(f, "fallo del almacén: {what}"),
+            Error::MissingObject => f.write_str("falta un objeto referenciado"),
+            Error::CorruptObject => f.write_str("un objeto no corresponde a su hash"),
+            Error::SyncContention => f.write_str("demasiada contención en el head remoto"),
         }
     }
 }

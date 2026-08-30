@@ -44,17 +44,39 @@ impl core::fmt::Debug for SecretBytes {
     }
 }
 
-/// Identificador aleatorio de una entrada. Es también el nombre del objeto en el
-/// almacén remoto, así que va en el AAD para que un ciphertext no se pueda
-/// mover de sitio sin invalidar su MAC.
+/// Identificador estable de una entrada: no cambia cuando la entrada se edita
+/// —eso genera un objeto nuevo— y es lo que la identifica a lo largo del
+/// historial. Va en el AAD para que un ciphertext no se pueda reasignar a otra
+/// entrada sin invalidar su MAC.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntryId([u8; 16]);
+
+impl serde::Serialize for EntryId {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> core::result::Result<S::Ok, S::Error> {
+        crate::byte_array::serialize(&self.0, serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for EntryId {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> core::result::Result<Self, D::Error> {
+        crate::byte_array::deserialize(deserializer).map(Self)
+    }
+}
 
 impl EntryId {
     pub fn generate() -> Result<Self> {
         let mut bytes = [0u8; 16];
         crypto::fill_random(&mut bytes)?;
         Ok(Self(bytes))
+    }
+
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
     }
 
     pub fn as_bytes(&self) -> &[u8; 16] {
