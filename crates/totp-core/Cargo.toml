@@ -18,6 +18,8 @@ data-encoding = { version = "2", default-features = false, features = ["alloc"] 
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_bytes = { version = "0.11", default-features = false, features = ["alloc"] }
 ciborium = { version = "0.2", default-features = false }
+# Solo para hablar con la API de Drive: los formatos propios van en CBOR.
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
 getrandom = "0.2"
 
 [dev-dependencies]

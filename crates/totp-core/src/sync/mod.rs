@@ -11,12 +11,14 @@
 //! el mismo motor para hablar con el dongle por WebHID, cambiando solo la
 //! implementación de [`ObjectStore`].
 
+mod drive;
 mod engine;
 mod merge;
 mod objects;
 mod repo;
 mod store;
 
+pub use drive::DriveStore;
 pub use engine::{SyncReport, sync};
 pub use merge::merge_trees;
 pub use objects::{Commit, ObjectId, Tree, TreeEntry};
