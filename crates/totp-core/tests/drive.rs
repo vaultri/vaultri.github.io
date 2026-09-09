@@ -13,7 +13,8 @@ use totp_core::Error;
 use totp_core::crypto::{KdfParams, SecretKey};
 use totp_core::http::{HttpClient, Method, Request, Response};
 use totp_core::sync::{
-    DriveStore, HeadUpdate, MemoryStore, ObjectId, ObjectStore, Repo, get_verified, sync,
+    DriveStore, HeadUpdate, HeaderStatus, MemoryStore, ObjectId, ObjectStore, Repo, get_verified,
+    sync,
 };
 use totp_core::vault::{Entry, EntryId, VaultHeader};
 
@@ -518,6 +519,43 @@ fn a_duplicated_head_file_is_resolved_the_same_way_by_everyone() {
         );
         // El de id menor gana, y es el mismo para todos.
         assert_eq!(ana.head().await.unwrap().unwrap().commit, a);
+    });
+}
+
+#[test]
+fn the_header_is_published_once_and_never_overwritten() {
+    block_on(async {
+        let drive = FakeDrive::new();
+        let mut ana = drive.store();
+        let mut bruno = drive.store();
+
+        assert_eq!(ana.header().await.unwrap(), None);
+        assert_eq!(
+            ana.publish_header(b"cabecera de ana").await.unwrap(),
+            HeaderStatus::Published
+        );
+        assert_eq!(
+            ana.publish_header(b"cabecera de ana").await.unwrap(),
+            HeaderStatus::AlreadyPublished
+        );
+
+        // Bruno arranca de cero y la encuentra: es lo que le deja desbloquear
+        // con su passphrase en un navegador que no ha visto nunca este vault.
+        assert_eq!(
+            bruno.header().await.unwrap().as_deref(),
+            Some(b"cabecera de ana".as_slice())
+        );
+
+        // Y un vault distinto en la misma cuenta no pisa el que había.
+        assert_eq!(
+            bruno.publish_header(b"otro vault").await.unwrap(),
+            HeaderStatus::Foreign
+        );
+        assert_eq!(
+            bruno.header().await.unwrap().as_deref(),
+            Some(b"cabecera de ana".as_slice())
+        );
+        assert_eq!(drive.server().count_named("header"), 1);
     });
 }
 

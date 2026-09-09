@@ -5,3 +5,5 @@ node_modules/
 dist/
 pkg/
 web/pkg/
+test-results/
+playwright-report/

@@ -1,0 +1,12 @@
+{
+  "name": "vaultrie-web-tests",
+  "private": true,
+  "description": "Pruebas de navegador de la web del vault. El proyecto de verdad es el workspace de Rust.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

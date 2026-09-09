@@ -1,7 +1,8 @@
 // La UI del vault. Todo lo que toca claves o secretos pasa por el WASM: aquí
 // solo hay pintado, eventos y la copia local en `localStorage`.
 
-import init, { Vault } from './pkg/totp_web.js';
+import init, { Vault, fetchHeader } from './pkg/totp_web.js';
+import * as drive from './drive.js';
 
 /// El vault cifrado vive en `localStorage`. Son bytes ilegibles sin la
 /// passphrase: quien inspeccione el almacenamiento no ve ni qué servicios hay.
@@ -19,6 +20,10 @@ const now = () => Date.now() / 1000;
 let vault = null;
 let ticker = null;
 let idleTimer = null;
+let syncing = false;
+let lastSyncAt = null;
+/** Último fallo de sync, para que la barra no lo tape con un estado alegre. */
+let syncError = null;
 /** Filas ya pintadas, por id de entrada, para no rehacer el DOM cada segundo. */
 const rows = new Map();
 
@@ -45,7 +50,36 @@ if (saved) {
 } else {
   show('setup');
   $('setup-pass').focus();
+  // Traer el vault de Drive solo tiene sentido si este despliegue sincroniza.
+  $('setup-restore-row').hidden = !drive.isConfigured();
 }
+
+/// Arranque de un dispositivo nuevo: la cabecera vive en Drive junto a los
+/// objetos, así que basta con bajarla para poder desbloquear con la passphrase
+/// de siempre. Las entradas llegan en el primer sync.
+$('setup-restore').addEventListener('click', async () => {
+  clearError('setup-error');
+  const button = $('setup-restore');
+  button.disabled = true;
+
+  try {
+    await drive.connect();
+    const header = await fetchHeader(drive.send);
+    if (!header) {
+      fail('setup-error', 'Esa cuenta de Drive no guarda ningún vault.');
+      return;
+    }
+
+    vault = Vault.fromHeader(header);
+    persist();
+    show('unlock');
+    $('unlock-pass').focus();
+  } catch (error) {
+    fail('setup-error', `No se pudo traer el vault: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 // --- Crear vault ------------------------------------------------------------
 
@@ -174,9 +208,118 @@ $('add-save').addEventListener('click', () => {
 
   persist();
   render();
+  syncSoon();
   $('add-form').reset();
   $('add-dialog').close();
 });
+
+// --- Sincronización ---------------------------------------------------------
+
+$('sync-connect').addEventListener('click', async () => {
+  try {
+    await drive.connect();
+  } catch (error) {
+    syncError = error.message;
+    updateSyncBar();
+    return;
+  }
+  syncError = null;
+  await syncNow();
+});
+
+$('sync-now').addEventListener('click', () => syncNow());
+
+$('sync-off').addEventListener('click', () => {
+  drive.disconnect();
+  lastSyncAt = null;
+  syncError = null;
+  updateSyncBar();
+});
+
+/// Sincroniza si hay con quién y no hay ya un sync en vuelo.
+///
+/// Se llama sola al abrir el vault y después de cada cambio, así que lo normal
+/// es que no diga nada: solo habla cuando falla o cuando hay algo que contar.
+async function syncNow() {
+  if (syncing || !drive.isConnected() || !vault?.isUnlocked) return;
+
+  syncing = true;
+  updateSyncBar();
+
+  try {
+    const report = await vault.sync(drive.send, now());
+    persist();
+    render();
+    lastSyncAt = Date.now();
+    syncError = null;
+
+    // El merge se queda con la versión más reciente de cada entrada. Si dos
+    // dispositivos tocaron la misma, una de las dos no está en el resultado, y
+    // eso no puede pasar en silencio: sigue estando en el commit anterior.
+    if (report.merges > 0) {
+      toast('Fusionado con otro dispositivo. Si falta una edición tuya, quedó en el historial.');
+    }
+  } catch (error) {
+    syncError = error.message;
+  } finally {
+    syncing = false;
+    updateSyncBar();
+  }
+}
+
+/// Sincroniza después de un cambio, sin molestar: lo que el usuario acaba de
+/// hacer ya está guardado aquí, así que un fallo de red no es una urgencia.
+function syncSoon() {
+  if (drive.isConnected()) syncNow();
+}
+
+/// Recupera el permiso de Google al abrir el vault, si ya se había dado en este
+/// navegador. Si Google no lo renueva sin preguntar, no se insiste: se queda el
+/// botón de conectar.
+async function resumeSync() {
+  if (!drive.isConfigured()) return;
+
+  if (!drive.isConnected()) {
+    if (!drive.wasConnected()) return;
+    try {
+      await drive.connect({ silent: true });
+    } catch {
+      updateSyncBar();
+      return;
+    }
+  }
+  await syncNow();
+}
+
+function updateSyncBar() {
+  const configured = drive.isConfigured();
+  const connected = drive.isConnected();
+
+  $('sync-connect').hidden = !configured || connected;
+  $('sync-now').hidden = !connected || syncing;
+  $('sync-off').hidden = !connected;
+
+  $('sync-state').classList.toggle('failed', syncError !== null);
+  $('sync-state').textContent = syncStateText(configured, connected);
+}
+
+function syncStateText(configured, connected) {
+  if (syncError) return `No se pudo sincronizar: ${syncError}`;
+  if (!configured) return 'Este despliegue no tiene configurada la sincronización.';
+  if (!connected) return 'Solo en este navegador.';
+  if (syncing) return 'Sincronizando…';
+  if (lastSyncAt) return `Sincronizado con Drive ${ago(lastSyncAt)}.`;
+  return 'Conectado a Drive.';
+}
+
+function ago(timestamp) {
+  const seconds = Math.round((Date.now() - timestamp) / 1000);
+  if (seconds < 45) return 'hace un momento';
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `hace ${minutes} min`;
+  return `hace ${Math.round(minutes / 60)} h`;
+}
 
 // --- Pintado ----------------------------------------------------------------
 
@@ -186,6 +329,8 @@ function openVault() {
   render();
   ticker ??= setInterval(render, 1000);
   resetIdleTimer();
+  updateSyncBar();
+  resumeSync();
 }
 
 function lock() {
@@ -231,6 +376,8 @@ function render() {
   }
 
   $('empty').hidden = entries.length > 0;
+  // El reloj ya pasa por aquí cada segundo; el «hace un momento» envejece solo.
+  updateSyncBar();
 }
 
 function buildRow(entry) {
@@ -269,6 +416,7 @@ function buildRow(entry) {
     vault.remove(entry.id, now());
     persist();
     render();
+    syncSoon();
   });
 
   return row;

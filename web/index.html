@@ -44,6 +44,10 @@
           <p class="error" id="setup-error" hidden></p>
           <button type="submit" class="primary">Crear vault</button>
         </form>
+        <p class="aside" id="setup-restore-row" hidden>
+          ¿Ya tienes un vault en otro dispositivo?
+          <button type="button" id="setup-restore" class="link">Traerlo desde Drive</button>
+        </p>
       </section>
 
       <!-- Clave de recuperación, una sola vez -->
@@ -80,6 +84,15 @@
 
       <!-- Vault abierto -->
       <section id="vault" hidden>
+        <div class="syncbar">
+          <span class="sync-state" id="sync-state">Solo en este navegador.</span>
+          <span class="sync-actions">
+            <button type="button" id="sync-connect" class="link" hidden>Conectar Drive</button>
+            <button type="button" id="sync-now" class="link" hidden>Sincronizar</button>
+            <button type="button" id="sync-off" class="link" hidden>Desconectar</button>
+          </span>
+        </div>
+
         <ul class="entries" id="entries"></ul>
         <p class="empty" id="empty" hidden>
           Aún no hay nada. Pulsa <strong>Añadir</strong> y pega la URI
@@ -89,9 +102,10 @@
 
       <footer class="note">
         <p>
-          Prototipo de la fase 1. El vault se cifra en este navegador y se guarda
-          solo aquí — la sincronización con Drive todavía no está conectada, así
-          que borrar los datos del sitio borra el vault.
+          Prototipo de la fase 1. El vault se cifra en este navegador: la
+          passphrase no sale de aquí y Drive, si lo conectas, solo ve bytes
+          cifrados. Sin conectarlo, el vault vive únicamente en este navegador y
+          borrar los datos del sitio lo borra.
         </p>
       </footer>
     </main>

@@ -232,6 +232,42 @@ button[disabled] {
 
 /* Lista de entradas */
 
+.aside {
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* Barra de sincronización: una línea de estado y sus acciones, deliberadamente
+   discreta. El sync que funciona no tiene que llamar la atención. */
+.syncbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.sync-state {
+  color: var(--muted);
+}
+
+.sync-state.failed {
+  color: var(--danger);
+}
+
+.sync-actions {
+  display: flex;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+
+.syncbar .link {
+  font-size: inherit;
+}
+
 .entries {
   list-style: none;
   margin: 0;

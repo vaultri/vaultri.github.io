@@ -18,7 +18,7 @@ mod objects;
 mod repo;
 mod store;
 
-pub use drive::DriveStore;
+pub use drive::{DriveStore, HeaderStatus};
 pub use engine::{SyncReport, sync};
 pub use merge::merge_trees;
 pub use objects::{Commit, ObjectId, Tree, TreeEntry};

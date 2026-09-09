@@ -13,6 +13,7 @@
 //! | `<hex>` | un objeto inmutable (entrada cifrada o commit), nombrado por su hash |
 //! | `head` | el hash del commit vigente, en hex |
 //! | `known-<hex>` | una línea del `known-commits.log`, un fichero por commit |
+//! | `header` | la cabecera del vault: los envoltorios de la Master Key |
 //!
 //! El log va como un fichero por línea porque Drive no sabe añadir al final de
 //! uno existente: reescribirlo entero convertiría cada `append` en una carrera
@@ -54,6 +55,7 @@ const UPLOAD: &str = "https://www.googleapis.com/upload/drive/v3/files";
 /// solo la ve esta app, con el scope `drive.appdata`.
 const SPACE: &str = "appDataFolder";
 const HEAD_NAME: &str = "head";
+const HEADER_NAME: &str = "header";
 const KNOWN_PREFIX: &str = "known-";
 const FILE_FIELDS: &str = "id,name,headRevisionId";
 const PAGE_SIZE: u32 = 1000;
@@ -321,6 +323,54 @@ impl<H: HttpClient> DriveStore<H> {
         Ok(HeadUpdate::Updated(
             meta.head_revision_id.unwrap_or_default(),
         ))
+    }
+}
+
+/// Qué pasó al publicar la cabecera.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeaderStatus {
+    /// No había ninguna y se subió esta.
+    Published,
+    /// Ya estaba, byte a byte la misma.
+    AlreadyPublished,
+    /// Hay una cabecera distinta: esta cuenta de Drive guarda otro vault.
+    Foreign,
+}
+
+impl<H: HttpClient> DriveStore<H> {
+    /// La cabecera del vault publicada en la carpeta, si la hay.
+    ///
+    /// Sin esto un dispositivo nuevo no puede hacer nada con los objetos: son
+    /// entradas cifradas con una MK que solo la cabecera sabe desenvolver. Es
+    /// lo único que sube que no es un objeto direccionado por contenido, y sigue
+    /// sin decirle nada a Google: para abrirla hace falta la passphrase.
+    pub async fn header(&self) -> Result<Option<Vec<u8>>> {
+        match self.lookup_fresh(HEADER_NAME).await? {
+            Some(meta) => self.download(&meta.id).await,
+            None => Ok(None),
+        }
+    }
+
+    /// Publica la cabecera si la carpeta aún no tiene ninguna.
+    ///
+    /// Nunca reescribe la que hubiera: una cabecera distinta significa que esta
+    /// cuenta de Drive ya guarda otro vault, y pisarla dejaría sus entradas
+    /// cifradas con una MK que ya nadie sabría desenvolver. Cuando las fases 2
+    /// y 4 añadan envoltorios nuevos habrá que decidir cómo se actualiza; hasta
+    /// entonces, el caso no se da.
+    pub async fn publish_header(&mut self, bytes: &[u8]) -> Result<HeaderStatus> {
+        let Some(meta) = self.lookup_fresh(HEADER_NAME).await? else {
+            let meta = self.create(HEADER_NAME, bytes).await?;
+            self.index.borrow_mut().remember(meta);
+            return Ok(HeaderStatus::Published);
+        };
+
+        let existing = self.download(&meta.id).await?.unwrap_or_default();
+        if existing == bytes {
+            Ok(HeaderStatus::AlreadyPublished)
+        } else {
+            Ok(HeaderStatus::Foreign)
+        }
     }
 }
 
