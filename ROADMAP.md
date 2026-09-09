@@ -108,7 +108,8 @@ acceso a los bytes cifrados.
 1. **Vault en web + sync con Google Drive.** Valida cripto (MK, KEK/Argon2id,
    recovery key), formato de entrada cifrada, y modelo de sync. El módulo
    de sync se diseña desacoplado de la UI para reutilizarlo después como
-   puente WebHID con el dongle.
+   puente WebHID con el dongle. *Funcional de punta a punta, verificado contra
+   dobles del `appDataFolder`; falta probarlo contra Drive de verdad.*
 2. **Extensión de Chrome.** Autofill + popup, desbloqueo vía WebAuthn PRF.
 3. **Dongle — parte TOTP.** Firmware propio: pantalla, navegación, RTC,
    sync vendor-HID reutilizando la web de la fase 1.
@@ -119,6 +120,11 @@ acceso a los bytes cifrados.
 
 ## Puntos abiertos / a verificar con prototipo
 
+- Confirmar contra una cuenta de Google real que el update del fichero `head`
+  respeta `If-Match` y con qué código falla la precondición. El diseño ya no
+  depende de ello —se comprueba la revisión antes de escribir, y el
+  `known-commits.log` hace que perder la carrera no pierda el commit—, pero
+  hasta probarlo no se sabe cuál de los dos mecanismos está trabajando.
 - Confirmar en la práctica que el bloqueo de WebHID a dispositivos FIDO
   (Chrome) actúa por interfaz (top-level collection) y no por dispositivo
   completo — condiciona el diseño del canal de sync del dongle.

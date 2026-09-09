@@ -25,10 +25,12 @@ pantalla pequeña, introducir un PIN es un problema de UI real, no un detalle.
 
 ## Riesgos técnicos de la fase 1
 
-**Compare-and-set sobre Drive.** Todo el modelo de sync descansa en poder mover
-el `head` condicionalmente. Si `If-Match` sobre el ETag no se comporta como se
-espera, o no distingue bien «perdí la carrera» de «error de red», hay que
-rediseñar esa parte. Mitigación ya incorporada al diseño: el
+**Compare-and-set sobre Drive.** Sigue abierto, pero acotado. El testigo acabó
+siendo el `headRevisionId`, y `set_head` comprueba la revisión antes de escribir
+además de mandar `If-Match`: la comprobación previa cierra la carrera larga
+aunque la API ignorase la precondición, y hay un test con un servidor que la
+ignora a propósito. Falta confirmar contra una cuenta de verdad si la respeta y
+con qué código falla. Mitigación ya incorporada al diseño: el
 `known-commits.log` append-only hace que perder la carrera **no pierda el
 commit**.
 
@@ -38,12 +40,16 @@ junto al envoltorio precisamente para poder ajustarlos sin romper vaults
 existentes, pero bajarlos debilita el envoltorio A.
 
 **Cuota del `appDataFolder`.** La historia es inmutable y nunca se reescribe, así
-que crece de forma monótona. Falta medir cuánto ocupa un vault real con uso
-prolongado y decidir si hará falta alguna forma de poda.
+que crece de forma monótona, y ahora además cada línea del `known-commits.log`
+es un fichero. Falta medir cuánto ocupa un vault real con uso prolongado, cuánto
+cuesta en llamadas un sync típico, y decidir si hará falta alguna forma de poda.
 
 **OAuth sin backend.** La web es estática sobre GitHub Pages: no hay dónde
-esconder un client secret. Flujo de cliente público con PKCE, con las
-limitaciones que eso trae.
+esconder un client secret. Resuelto con el flujo de cliente público de Google
+Identity Services: token de vida corta, renovado en silencio y nunca guardado en
+disco. La limitación que queda es que, si Google no renueva sin preguntar, hay
+que volver a pulsar «Conectar» — los navegadores bloquean los popups que no
+salen de un clic.
 
 ## Riesgos de producto
 
@@ -52,10 +58,11 @@ cada pulsación sería inviable— y una diferencia real de postura de seguridad
 frente a la extensión. Conviene que quede explicada en la propia UI, no solo en
 el README.
 
-**`localStorage` como única copia hoy.** Mientras el sync no esté conectado,
-borrar los datos del sitio borra el vault. La recovery key es lo único que salva
-al usuario, y solo si la apuntó. Es el argumento más fuerte para no dejar la
-fase 1 a medias mucho tiempo.
+**`localStorage` como única copia si no se conecta Drive.** Con el sync
+conectado hay una segunda copia y un dispositivo nuevo puede recuperar el vault
+entero con la passphrase. Sin conectarlo, borrar los datos del sitio sigue
+borrando el vault, y la recovery key es lo único que salva al usuario — solo si
+la apuntó.
 
 **Soporte de navegador desigual.** WebAuthn PRF maduro solo en Chrome/Edge;
 WebHID solo en Chrome/Edge/Opera de escritorio. El envoltorio A (passphrase)
@@ -64,9 +71,10 @@ segunda.
 
 ## Deuda conocida
 
-- **Ningún test automatizado de la capa JS.** Las 946 líneas de `web/` se
-  comprueban a mano.
-- **`totp-web` sin tests propios.** Hoy es traducción de tipos, así que el
-  riesgo es bajo; cuando exponga el sync dejará de serlo.
-- **Un solo backend de `ObjectStore`.** Hasta que exista un segundo (Drive), no
-  hay prueba real de que la abstracción de siete métodos sea la correcta.
+- **La capa JS se prueba contra dobles.** Los cuatro tests de navegador cubren
+  el camino entero, pero Google y Drive los pone un doble: nada de esto ha
+  hablado todavía con la API real.
+- **El puente WASM no tiene tests propios.** Lo que ejercita `Vault.sync` es el
+  test de navegador; no hay nada a nivel de `wasm-bindgen-test`.
+- **Nada poda la historia.** Ni objetos viejos ni líneas del log: todo lo que se
+  publica se queda.

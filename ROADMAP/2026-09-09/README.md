@@ -21,9 +21,10 @@ foto fechada, pensada para leerse tal cual dentro de seis meses.
 
 ## Estado en una línea
 
-Fase 1 en curso: el núcleo criptográfico y el motor de sincronización están
-terminados y probados (**71 tests en verde**), la web funciona entera contra un
-almacén en memoria, y falta el backend de Google Drive para cerrar la fase.
+Fase 1 funcional de punta a punta: núcleo criptográfico, motor de sync, backend
+del `appDataFolder` de Google Drive, OAuth y web sincronizando (**88 tests de
+Rust y 4 de navegador en verde**). Falta probarlo contra Drive de verdad para
+darla por cerrada.
 
 ```mermaid
 %%{init: {'theme':'base'}}%%
