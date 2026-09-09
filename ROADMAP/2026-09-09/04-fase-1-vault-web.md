@@ -1,8 +1,9 @@
 # Fase 1 — Vault en web + sync con Google Drive
 
-**Estado: en curso.** Es la fase que valida todo lo demás: si la cripto, el
-formato de entrada y el modelo de sync aguantan aquí, las fases 2 a 5 son
-clientes nuevos sobre piezas ya probadas.
+**Estado: funcional de punta a punta; falta probarla contra Drive de verdad.**
+Es la fase que valida todo lo demás: si la cripto, el formato de entrada y el
+modelo de sync aguantan aquí, las fases 2 a 5 son clientes nuevos sobre piezas
+ya probadas.
 
 ## Objetivo
 
@@ -21,60 +22,70 @@ en la fase 3 como puente WebHID con el dongle.
 - [x] `sync` — objetos inmutables, commits, merge por ancestro común, `head` con
       compare-and-set, `known-commits.log`
 - [x] `ObjectStore` como trait de siete métodos, con `MemoryStore` de referencia
-- [x] Puente WASM `totp-web` con las 13 operaciones del ciclo de vida del vault
+- [x] `DriveStore` — el mismo trait sobre el `appDataFolder` de Google Drive
+- [x] OAuth de cliente público con Google Identity Services
+- [x] `Vault.sync()` en el puente WASM, con el transporte HTTP inyectado desde JS
+- [x] UI de sync: conectar, estado, y qué se cuenta cuando hubo fusión
+- [x] Arranque de un dispositivo nuevo bajando la cabecera del vault de Drive
 - [x] Web funcional: alta, códigos con cuenta atrás, copia, bloqueo manual y por
       inactividad, persistencia en `localStorage`
 - [x] CI con fmt, clippy, tests, build a WASM y reproducción de la build de
       despliegue
+- [x] Pruebas de navegador con Playwright contra un doble del `appDataFolder`
 - [x] Despliegue a GitHub Pages desde Actions
+
+### Cómo quedó el backend de Drive
+
+Los puntos que esta fase tenía que decidir, decididos:
+
+- **`set_head` con compare-and-set.** El testigo opaco es el `headRevisionId`
+  del fichero `head`. Antes de escribir se comprueba que la revisión sigue
+  siendo la esperada, y además se manda `If-Match`; se tratan 409, 412 y 428
+  como «llegué tarde». La comprobación previa cierra la carrera larga aunque la
+  API ignorase la precondición — que es justo lo que falta por confirmar contra
+  una cuenta de verdad.
+- **`known_commits`.** Un fichero por línea (`known-<hex>`). Drive no sabe
+  añadir al final de un fichero existente, y reescribirlo entero convertiría
+  cada anotación en una carrera que puede perder líneas.
+- **Listado y `contains`.** Un índice de nombre → fichero que se relee al leer
+  el `head`, que es cuando el motor de sync empieza a mirar el remoto. `contains`
+  y `put` se fían del índice —un falso «no está» solo cuesta una subida de más
+  de un objeto idéntico—; `get` pregunta por el nombre concreto antes de
+  rendirse, porque ahí un falso «no está» sí rompería el sync.
+- **La cabecera del vault.** No estaba en el plan y hacía falta: sin ella, un
+  navegador nuevo se encuentra objetos que nadie sabe abrir. Va como un fichero
+  más de la carpeta y no se reescribe nunca; si la cuenta ya guarda otro vault,
+  el sync se para en vez de dejar sus entradas ilegibles.
 
 ## Pendiente
 
-### 1. Backend de Google Drive (`appDataFolder`)
+### Antes de dar la fase por cerrada del todo
 
-Implementar `ObjectStore` sobre `fetch` contra la API de Drive. Hoy no existe ni
-una línea: «Drive» solo aparece en comentarios del código.
+1. **Probarlo contra Drive de verdad.** Todo lo de arriba está verificado contra
+   dobles que hablan el mismo dialecto, no contra la API. Queda por confirmar
+   con una cuenta real: que `If-Match` se respeta en el update del `head` y con
+   qué código falla, que el `headRevisionId` cambia en cada escritura de
+   contenido, y cómo se comporta el listado con muchos objetos.
+2. **Cuotas y tamaño.** Medir cuánto ocupa un vault con historia y cuántas
+   llamadas cuesta un sync típico. El `appDataFolder` tiene límite y cada
+   listado cuenta.
+3. **Client id del despliegue.** `web/config.js` va vacío en el repo: el sync
+   solo se enciende en un despliegue que ponga el suyo.
 
-Puntos a resolver:
+### Fuera del criterio de cierre, pero pedido por el uso
 
-- **`set_head` con compare-and-set.** El testigo opaco será el ETag de Drive.
-  Hay que confirmar que la API respeta `If-Match` en el update del fichero de
-  `head` y qué código devuelve al fallar, para distinguir «perdí la carrera» de
-  «error de red».
-- **`known_commits`.** El log es append-only; Drive no tiene append nativo, así
-  que hay que decidir entre reescribir el fichero entero o un objeto por línea.
-- **Listado y `contains`.** Cuántas llamadas cuesta y si conviene cachear el
-  índice de objetos localmente.
-- **Cuotas y tamaño.** `appDataFolder` tiene límite; medir cuánto ocupa un vault
-  real con historia.
-
-### 2. OAuth con Google
-
-Obtención y refresco del token con el scope `drive.appdata`. Sin empezar. En una
-web estática sobre GitHub Pages no hay backend donde esconder un client secret,
-así que va con el flujo implícito/PKCE de cliente público.
-
-### 3. Exponer el sync en el puente WASM
-
-`totp-web` no publica ninguna operación de sincronización. Hay que sacar `sync()`
-a JS y decidir el manejo de errores de red y de conflicto de `head`.
-
-### 4. UI de sync en `web/`
-
-Conectar cuenta, estado de la última sincronización, y qué se le enseña al
-usuario cuando el merge descarta un cambio: sigue recuperable desde un commit
-anterior, pero hay que contarlo.
-
-### 5. Tests del backend remoto
-
-El `ObjectStore` de Drive necesita sus propios tests contra un doble. Los 11 de
-`tests/sync.rs` solo ejercitan `MemoryStore`. Tampoco hay ninguna prueba
-automatizada de la capa JS.
+- Editar una entrada ya dada de alta (hoy solo alta y baja).
+- Poda del historial: nada borra objetos viejos todavía.
 
 ## Criterio de cierre
 
 La fase 1 está hecha cuando dos navegadores distintos, con la misma cuenta de
 Google y la misma passphrase, convergen al mismo conjunto de entradas después de
 editar cada uno por su lado estando desconectados — y el remoto no ha aprendido
-nada sobre el contenido. Los tests de `tests/sync.rs` ya comprueban ambas cosas
-contra `MemoryStore`; falta que sea cierto contra Drive de verdad.
+nada sobre el contenido.
+
+**Cumplido contra un doble del `appDataFolder`**, tanto en Rust
+(`crates/totp-core/tests/drive.rs`) como en el navegador de verdad
+(`tests/vault.spec.js`, con Playwright: dos contextos distintos, la misma cuenta
+de mentira, y la comprobación de que a Drive no llega nada en claro). Falta
+repetirlo contra la API real.

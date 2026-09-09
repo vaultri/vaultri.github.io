@@ -50,8 +50,24 @@ jobs:
       - name: Comprobar que la web queda completa
         run: |
           set -euo pipefail
-          for file in index.html app.js style.css pkg/totp_web.js pkg/totp_web_bg.wasm; do
+          for file in index.html app.js drive.js config.js style.css pkg/totp_web.js pkg/totp_web_bg.wasm; do
             test -s "web/$file" || { echo "falta web/$file"; exit 1; }
           done
           # Está vacío a propósito, así que aquí no vale `test -s`.
           test -e web/.nojekyll || { echo "falta web/.nojekyll"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Lo único que prueba la capa JS: el puente WASM, el OAuth y el pintado,
+      # contra un doble del appDataFolder. Necesita el WASM ya compilado, de ahí
+      # que vaya en este job y no en el de arriba.
+      - name: Pruebas de navegador
+        run: npx playwright test

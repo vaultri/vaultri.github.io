@@ -20,19 +20,20 @@ gantt
     Motor de sync y ObjectStore          :done,   f1b, 2026-08-30, 2026-09-05
     Puente WASM y web funcional          :done,   f1c, 2026-09-01, 2026-09-09
     CI y despliegue a Pages              :done,   f1d, 2026-09-01, 2026-09-09
-    OAuth con Google (drive.appdata)     :active, f1e, 2026-09-09, 14d
-    Backend ObjectStore sobre Drive      :crit,   f1f, after f1e, 21d
-    Exponer sync en el puente WASM       :        f1g, after f1f, 7d
-    UI de sync en la web                 :        f1h, after f1g, 10d
-    Tests del backend remoto             :        f1i, after f1f, 14d
+    Backend ObjectStore sobre Drive      :done,   f1f, 2026-09-09, 1d
+    OAuth con Google (drive.appdata)     :done,   f1e, 2026-09-09, 1d
+    Exponer sync en el puente WASM       :done,   f1g, 2026-09-09, 1d
+    UI de sync en la web                 :done,   f1h, 2026-09-09, 1d
+    Tests contra un doble del remoto     :done,   f1i, 2026-09-09, 1d
+    Validación contra Drive de verdad    :crit,   f1j, 2026-09-10, 7d
 
     section Fase 2 · Extensión
-    Esqueleto MV3 y CSP para WASM        :        f2a, after f1h, 10d
+    Esqueleto MV3 y CSP para WASM        :        f2a, after f1j, 10d
     WebAuthn PRF y envoltorio C          :        f2b, after f2a, 14d
     Autofill y popup                     :        f2c, after f2b, 14d
 
     section Fase 3 · Dongle TOTP
-    Prototipo WebHID vs interfaz FIDO    :crit,   f3a, after f1h, 7d
+    Prototipo WebHID vs interfaz FIDO    :crit,   f3a, after f1j, 7d
     Firmware base, pantalla y botón      :        f3b, after f3a, 21d
     RTC y sincronización de hora         :        f3c, after f3b, 10d
     Canal vendor-HID y emparejamiento    :        f3d, after f3b, 21d
@@ -51,10 +52,12 @@ gantt
 
 Dos tareas marcadas como críticas, por motivos distintos:
 
-**Backend de `ObjectStore` sobre Drive.** Bloquea el cierre de la fase 1 y, con
-ella, absolutamente todo lo demás. Es además donde más incógnitas quedan: si el
-compare-and-set sobre ETag no se comporta como se espera, hay que rediseñar
-cómo se mueve el `head`.
+**Validación contra Drive de verdad.** El backend está escrito y probado contra
+dobles que hablan el mismo dialecto que la API, así que lo que queda no es
+construir sino confirmar: si el update del `head` no respeta `If-Match`, el
+diseño ya lo aguanta —se comprueba la revisión antes de escribir y el
+`known-commits.log` hace que perder la carrera no pierda el commit—, pero
+conviene saberlo antes de que la fase 2 empiece a apoyarse en esto.
 
 **Prototipo de WebHID contra la interfaz FIDO.** Son unos pocos días de trabajo
 que pueden invalidar el diseño entero del canal de sync del dongle. Va lo antes
@@ -91,7 +94,7 @@ encontrado antes lo que hubiera que cambiar.
 
 | Hito | Qué significa |
 |---|---|
-| **M1 — Fase 1 cerrada** | Dos navegadores con la misma cuenta y passphrase convergen tras editar cada uno offline, y el remoto no aprende nada del contenido |
+| **M1 — Fase 1 cerrada** | Dos navegadores con la misma cuenta y passphrase convergen tras editar cada uno offline, y el remoto no aprende nada del contenido. *Ya se cumple contra un doble del `appDataFolder`, en Rust y en el navegador; queda repetirlo contra Drive de verdad* |
 | **M2 — Extensión usable** | Autofill funcionando con desbloqueo biométrico en cada uso, sin retener la MK |
 | **M3 — Dongle standalone** | Genera códigos con su propio RTC y sincroniza por USB. Entregable útil sin nada de FIDO |
 | **M4 — Llave FIDO2** | El mismo dongle pasa como autenticador CTAP2 y se autodesbloquea con HMAC-Secret |
